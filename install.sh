@@ -56,6 +56,8 @@ DEV_MODE=0
 CONFIGURE_PATH=0
 DO_UNINSTALL=0
 
+EXPLICIT_VERSION=0
+
 # Parse arguments
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -76,6 +78,7 @@ while [ $# -gt 0 ]; do
         --version)
             if [ -n "${2:-}" ] && [[ "$2" != --* ]]; then
                 ADA_RELEASE_VERSION="${2#v}"
+                EXPLICIT_VERSION=1
                 shift 2
             else
                 printf "%b\n" "${RED}[ERROR] --version requires a version argument (e.g. 0.3.0)${RESET}" >&2
@@ -204,6 +207,18 @@ elif [ -f "./pyproject.toml" ]; then
     REPO_DIR="$(pwd)"
 fi
 
+if [ "$EXPLICIT_VERSION" -eq 0 ] && [ -z "$REPO_DIR" ]; then
+    LATEST_TAG=""
+    if command -v curl >/dev/null 2>&1; then
+        LATEST_TAG="$(curl -fsSL --connect-timeout 4 "https://api.github.com/repos/${PUBLIC_DIST_REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | head -n 1 | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/' || true)"
+    elif command -v wget >/dev/null 2>&1; then
+        LATEST_TAG="$(wget -qO- --timeout=4 "https://api.github.com/repos/${PUBLIC_DIST_REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | head -n 1 | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/' || true)"
+    fi
+    if [ -n "$LATEST_TAG" ]; then
+        ADA_RELEASE_VERSION="${LATEST_TAG#v}"
+    fi
+fi
+
 RELEASE_BASE_URL="https://github.com/${PUBLIC_DIST_REPO}/releases/download/v${ADA_RELEASE_VERSION}"
 TARBALL_FILENAME="ada-${ADA_RELEASE_VERSION}.tar.gz"
 TARBALL_URL="${RELEASE_BASE_URL}/${TARBALL_FILENAME}"
@@ -312,6 +327,12 @@ fi
 if [ -n "$REPO_DIR" ]; then
     printf "Installing ADA from local repository (%s)...\n" "$REPO_DIR"
     "$VENV_PATH/bin/pip" install -e "$REPO_DIR[$EXTRAS]"
+    if [ "$DEV_MODE" -eq 1 ] && [ -d "$REPO_DIR/.git" ]; then
+        if [ -f "$REPO_DIR/scripts/bump_version.py" ]; then
+            printf "Setting up automated versioning Git hooks...\n"
+            "$VENV_PATH/bin/python" "$REPO_DIR/scripts/bump_version.py" --install-hook 2>/dev/null || true
+        fi
+    fi
 else
     # Remote Public Installation from Published Release Tarball
     DOWNLOAD_DIR="$(mktemp -d /tmp/ada-install-XXXXXX)"
