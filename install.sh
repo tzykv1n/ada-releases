@@ -442,8 +442,25 @@ if ! "$ADA_BIN" --version >/dev/null 2>&1; then
     exit 1
 fi
 
+# Verify critical runtime modules import cleanly
+if [ -x "$VENV_PATH/bin/python" ]; then
+    VENV_PY="$VENV_PATH/bin/python"
+elif [ -x "$VENV_PATH/bin/python3" ]; then
+    VENV_PY="$VENV_PATH/bin/python3"
+else
+    VENV_PY=""
+fi
+
+if [ -n "$VENV_PY" ]; then
+    if ! "$VENV_PY" -c "import ada; import ada.backend; import ada.experiments; from ada.experiments import get_experiment; import ada.tui.menu; import ada.preflight" >/dev/null 2>&1; then
+        printf "%b\n" "${RED}[ERROR] Health check failed: Critical runtime modules (experiments, backend, tui) failed to import!${RESET}" >&2
+        exit 1
+    fi
+fi
+
 VER_OUTPUT="$("$ADA_BIN" --version 2>&1)"
 printf "%b\n" "${GREEN}✓ Health verification passed: ${VER_OUTPUT}${RESET}"
+printf "%b\n" "${GREEN}✓ Verified critical runtime modules (ada.backend, ada.experiments, ada.tui)${RESET}"
 
 printf "\n%b\n" "${BOLD}${GREEN}ADA installation complete!${RESET}"
 printf "You can now run:\n"
